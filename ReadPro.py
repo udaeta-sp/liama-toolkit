@@ -26,7 +26,7 @@ def mostrar_espectro(ruta, aplicar_suavizado=False, savgol_window=15, savgol_pol
     if aplicar_suavizado:
         if savgol_window % 2 == 0:
             savgol_window += 1
-        segunda_derivada = np.gradient(np.gradient(y, savgol_window), savgol_window)
+        segunda_derivada = savgol_filter(y, window_length=savgol_window, polyorder=savgol_poly, deriv=2)
     else:
         dx = x[1] - x[0] if len(x) > 1 else 1.0
         segunda_derivada = np.gradient(np.gradient(y, dx), dx)
@@ -85,7 +85,7 @@ def guardar_imagen_superpuesta(ruta, aplicar_suavizado=False, savgol_window=15, 
     if aplicar_suavizado:
         if savgol_window % 2 == 0:
             savgol_window += 1
-        segunda_derivada = np.gradient(np.gradient(y, savgol_window), savgol_window)
+        segunda_derivada = savgol_filter(y, window_length=savgol_window, polyorder=savgol_poly, deriv=2)
     else:
         dx = x[1] - x[0] if len(x) > 1 else 1.0
         segunda_derivada = np.gradient(np.gradient(y, dx), dx)
