@@ -1,0 +1,4 @@
+numpy>=1.24
+matplotlib>=3.7
+scipy>=1.11
+spectrochempy>=0.8.1
