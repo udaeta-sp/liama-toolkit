@@ -83,6 +83,8 @@ class CanvasWidget(QWidget):
         self._hover_timer.setSingleShot(True)
         self._hover_timer.timeout.connect(self._do_hover_check)
         self._last_hover_event = None
+        self.transmittance_mode = False
+        self._last_plot_data = None
         self._setup_ui()
 
     def _setup_ui(self):
@@ -109,6 +111,11 @@ class CanvasWidget(QWidget):
         self.show_labels_cb.setToolTip("Mostrar títulos de ejes y leyenda")
         self.show_labels_cb.stateChanged.connect(self._schedule_redraw)
         toggle_row.addWidget(self.show_labels_cb)
+
+        self.transmittance_cb = QCheckBox("Transmitancia")
+        self.transmittance_cb.setToolTip("Mostrar espectros en transmitancia (%) en lugar de absorbancia")
+        self.transmittance_cb.stateChanged.connect(self._on_display_mode_changed)
+        toggle_row.addWidget(self.transmittance_cb)
 
         toggle_row.addStretch()
         left.addLayout(toggle_row)
@@ -229,6 +236,15 @@ class CanvasWidget(QWidget):
         else:
             self.canvas.setToolTip("")
 
+    def _on_display_mode_changed(self):
+        self.transmittance_mode = self.transmittance_cb.isChecked()
+        if self.transmittance_mode:
+            self.plot_config.y_label = "Transmitancia (%)"
+        else:
+            self.plot_config.y_label = "Absorbancia"
+        if self._last_plot_data is not None:
+            self.update_spectra(*self._last_plot_data)
+
     def _on_range_changed(self, low: float, high: float):
         # Update spinboxes without triggering loop
         self.wn_high_spin.blockSignals(True)
@@ -269,6 +285,10 @@ class CanvasWidget(QWidget):
         peaks: list[dict] | None = None,
     ):
         """Full redraw of all spectra and derivatives."""
+        self._last_plot_data = (wavenumber_data, configs, derivative_data, deriv_configs, vlines, peaks)
+        if self.transmittance_mode:
+            wavenumber_data = [(wn, 10.0 ** (2.0 - y)) for wn, y in wavenumber_data]
+
         self.ax.cla()
         self.ax_right.cla()
         self._style_axes()

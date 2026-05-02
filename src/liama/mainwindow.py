@@ -543,10 +543,15 @@ class MainWindow(QMainWindow):
     # Mouse coords
     # ─────────────────────────────────────────────────────────────────
 
-    def _on_mouse_coords(self, wn: float, absorbance: float):
-        self._status.showMessage(
-            f"Número de onda: {wn:.1f} cm⁻¹  |  Absorbancia: {absorbance:.4f}"
-        )
+    def _on_mouse_coords(self, wn: float, y_val: float):
+        if self._canvas.transmittance_mode:
+            self._status.showMessage(
+                f"Número de onda: {wn:.1f} cm⁻¹  |  Transmitancia: {y_val:.2f} %"
+            )
+        else:
+            self._status.showMessage(
+                f"Número de onda: {wn:.1f} cm⁻¹  |  Absorbancia: {y_val:.4f}"
+            )
 
     # ─────────────────────────────────────────────────────────────────
     # Export
