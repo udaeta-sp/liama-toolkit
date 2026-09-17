@@ -1,6 +1,69 @@
 # LIAMA Toolkit
 Aplicación local en Python para análisis FTIR-ATR de espectros `.SPA`, con visualización interactiva, procesamiento, anotaciones y análisis multivariado.
 
+## Instalación en Windows
+
+### Paso 1 — Instalar Python (una sola vez por computadora)
+Si la computadora ya tiene Python, saltá al paso 2.
+
+1. Descargar Python desde https://www.python.org/downloads/ (cualquier versión 3.10 o superior).
+2. **Importante:** en la primera pantalla del instalador, marcar la casilla
+   **"Add python.exe to PATH"** antes de apretar *Install*.
+3. Terminar la instalación.
+
+### Paso 2 — Ejecutar LIAMA
+Copiar la carpeta del proyecto a la computadora y hacer doble clic en **`LIAMA.bat`**.
+
+La primera vez, el programa avisa qué librerías faltan y pide confirmación para
+instalarlas. Son varios cientos de MB, así que conviene tener buena conexión;
+puede tardar unos minutos. Las siguientes veces abre directamente.
+
+Eso es todo: no hace falta abrir una terminal ni escribir comandos.
+
+## Instalación en Linux
+```bash
+python3 -m pip install -r requirements.txt
+python3 run.py
+```
+Según la distribución, Qt puede necesitar paquetes del sistema
+(por ejemplo `libxcb-cursor0` en Debian/Ubuntu).
+
+## Si algo falla
+
+| Síntoma | Qué hacer |
+|---|---|
+| `LIAMA.bat` dice que no encuentra Python | Reinstalar Python marcando **"Add python.exe to PATH"** (paso 1). |
+| La ventana se cierra sola apenas abre | Abrir `LIAMA.bat` y leer el mensaje antes de que cierre, o ejecutar `python run.py` desde una terminal en la carpeta. |
+| Falla la instalación de librerías | Casi siempre es la conexión. Volver a ejecutar `LIAMA.bat`: retoma lo que falte. |
+| Abre pero no lee los `.SPA` | Es `spectrochempy`. Reinstalarlo con `python -m pip install --force-reinstall spectrochempy`. |
+
+## Instalación manual de librerías
+El archivo `requirements.txt` es la lista de librerías que necesita el programa.
+`LIAMA.bat` la usa automáticamente, pero se puede correr a mano:
+
+```bat
+python -m pip install -r requirements.txt
+```
+
+Librerías: `PyQt6`, `numpy`, `scipy`, `pandas`, `matplotlib`, `scikit-learn`,
+`spectrochempy`, `openpyxl`.
+
+## Ejecución sin el `.bat`
+```bash
+python run.py
+```
+`run.py` ajusta el path por su cuenta, así que funciona desde cualquier
+directorio de trabajo.
+
+## Flujo funcional de la app
+1. Carga de carpeta con archivos `.SPA`.
+2. Lectura y validación de espectros.
+3. Selección de espectros en stage para trabajo activo.
+4. Visualización + procesamiento espectral en tiempo de interacción.
+5. Detección/anotación de picos.
+6. Análisis multivariado (PCA / PLS-DA / RF) sobre el stage.
+7. Exportación de figuras y CSV.
+
 ## Arquitectura del programa
 La aplicación está organizada en capas funcionales:
 
@@ -20,68 +83,6 @@ La aplicación está organizada en capas funcionales:
   - `canvas_widget`: visualización matplotlib con ejes y controles interactivos.
 - `liama.utils`
   - Tema visual y paletas de color.
-
-## Flujo funcional de la app
-1. Carga de carpeta con archivos `.SPA`.
-2. Lectura y validación de espectros.
-3. Selección de espectros en stage para trabajo activo.
-4. Visualización + procesamiento espectral en tiempo de interacción.
-5. Detección/anotación de picos.
-6. Análisis multivariado (PCA / PLS-DA / RF) sobre el stage.
-7. Exportación de figuras y CSV.
-
-## Requisitos
-- Python 3.10 o superior
-- `pip` actualizado
-
-## Instalación
-### Windows (PowerShell)
-```powershell
-py -3.10 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-```
-
-### Linux (bash)
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-```
-
-## Ejecución
-### Opción 1: launcher Python
-```bash
-python run.py
-```
-
-### Opción 2 (Windows): lanzador BAT
-```bat
-LIAMA.bat
-```
-
-### Opción 3: script instalable `liama`
-```bash
-python -m pip install -e .
-liama
-```
-
-## Dependencias de runtime
-Definidas en `requirements.txt` y alineadas con `pyproject.toml`:
-- `PyQt6`
-- `numpy`
-- `scipy`
-- `pandas`
-- `matplotlib`
-- `scikit-learn`
-- `spectrochempy`
-- `openpyxl`
-
-## Compatibilidad
-- Objetivo: ejecución local en Windows y Linux.
-- En Linux, Qt puede requerir paquetes del sistema según la distribución.
 
 ## Licencia
 Ver `LICENSE`.
