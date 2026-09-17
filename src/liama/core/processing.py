@@ -216,7 +216,6 @@ def apply_pipeline_to_matrix(
         if not step.get("enabled", False):
             continue
         name = step["name"]
-        params = step.get("params", {})
 
         # Row-wise operations
         if name in ("smooth_sg", "second_derivative_sg", "baseline_polynomial",

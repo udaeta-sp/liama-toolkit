@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import numpy as np
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
@@ -16,7 +16,15 @@ from PyQt6.QtWidgets import (
 )
 
 from .range_slider import RangeSlider
-from ..utils.theme import BG_DARK, BG_MID, BORDER, FG_TEXT, FG_DIM
+from ..utils.theme import (
+    BG_DARK, BG_MID, BORDER, FG_TEXT, FG_DIM,
+    LT_BG, LT_BG_MID, LT_BORDER, LT_FG_TEXT, LT_FG_DIM,
+)
+
+
+def absorbance_to_transmittance(y):
+    """Inverse of the A = 2 - log10(%T) conversion applied by the .SPA reader."""
+    return 10.0 ** (2.0 - np.asarray(y, dtype=np.float64))
 
 
 @dataclass
@@ -73,7 +81,7 @@ class CanvasWidget(QWidget):
         self._spectrum_lines: dict[str, Line2D] = {}
         self._derivative_lines: dict[str, Line2D] = {}
         self._vlines: list = []
-        self._peak_scatter = None
+        self._zero_lines: list = []
         self.plot_config = PlotConfig()
         self._debounce_timer = QTimer()
         self._debounce_timer.setSingleShot(True)
@@ -101,8 +109,10 @@ class CanvasWidget(QWidget):
         toggle_row.setSpacing(10)
         toggle_row.setContentsMargins(4, 2, 4, 0)
 
-        self.zero_axes_cb = QCheckBox("Ejes en 0")
-        self.zero_axes_cb.setToolTip("Mostrar líneas horizontales y verticales en y=0")
+        self.zero_axes_cb = QCheckBox("Eje en 0")
+        self.zero_axes_cb.setToolTip(
+            "Dibujar la línea y=0 y forzar que quede dentro del área visible"
+        )
         self.zero_axes_cb.stateChanged.connect(self._schedule_redraw)
         toggle_row.addWidget(self.zero_axes_cb)
 
@@ -184,6 +194,25 @@ class CanvasWidget(QWidget):
         self.v_slider.valueChanged.connect(self._schedule_redraw)
         self.v_slider.setFixedWidth(20)
         main_layout.addWidget(self.v_slider)
+
+    def apply_theme(self, dark: bool):
+        """Repaint the figure, canvas and slider for the active theme."""
+        pc = self.plot_config
+        if dark:
+            pc.fig_bg, pc.plot_bg = BG_DARK, BG_MID
+            pc.text_color, pc.tick_color, pc.spine_color = FG_TEXT, FG_DIM, BORDER
+            self.range_slider.groove_color = "#3c3c3c"
+        else:
+            pc.fig_bg, pc.plot_bg = LT_BG, LT_BG_MID
+            pc.text_color, pc.tick_color, pc.spine_color = (
+                LT_FG_TEXT, LT_FG_DIM, LT_BORDER
+            )
+            self.range_slider.groove_color = "#cccccc"
+
+        self.figure.set_facecolor(pc.fig_bg)
+        self.canvas.setStyleSheet(f"background-color: {pc.fig_bg};")
+        self.range_slider.update()
+        self._style_axes()
 
     def _style_axes(self):
         pc = self.plot_config
@@ -287,10 +316,18 @@ class CanvasWidget(QWidget):
         """Full redraw of all spectra and derivatives."""
         self._last_plot_data = (wavenumber_data, configs, derivative_data, deriv_configs, vlines, peaks)
         if self.transmittance_mode:
-            wavenumber_data = [(wn, 10.0 ** (2.0 - y)) for wn, y in wavenumber_data]
+            wavenumber_data = [
+                (wn, absorbance_to_transmittance(y)) for wn, y in wavenumber_data
+            ]
+            if peaks:
+                peaks = [
+                    {**p, "absorbance": float(absorbance_to_transmittance(p["absorbance"]))}
+                    for p in peaks
+                ]
 
         self.ax.cla()
         self.ax_right.cla()
+        self._zero_lines = []
         self._style_axes()
         self._spectrum_lines.clear()
         self._derivative_lines.clear()
@@ -342,9 +379,12 @@ class CanvasWidget(QWidget):
                 )
                 self._vlines.append(line)
                 if vl.get("show_label", True):
+                    # x in data coords, y in axes coords — pins the label to the
+                    # top of the frame regardless of the y limits chosen later.
                     self.ax.text(
-                        vl["wavenumber"], self.ax.get_ylim()[1] * 0.98,
+                        vl["wavenumber"], 0.98,
                         f" {vl['wavenumber']:.0f}",
+                        transform=self.ax.get_xaxis_transform(),
                         color=vl.get("color", "#ffffff"),
                         fontsize=8, rotation=90,
                         verticalalignment="top",
@@ -376,6 +416,21 @@ class CanvasWidget(QWidget):
         self.canvas.draw()
         self.canvas.flush_events()
 
+    def _padded_limits(
+        self, lo: float, hi: float, margin_pct: float, fallback_amp: float
+    ) -> tuple[float, float, float]:
+        """Pad a data range by margin_pct, pulling y=0 into frame when requested.
+
+        Returns (low, high, amplitude); amplitude is the unpadded span, used
+        as the unit for the vertical scroll slider.
+        """
+        if self.zero_axes_cb.isChecked():
+            lo = min(lo, 0.0)
+            hi = max(hi, 0.0)
+        amp = hi - lo if hi > lo else fallback_amp
+        pad = amp * margin_pct
+        return lo - pad, hi + pad, amp
+
     def _update_axes_limits(self):
         """Set axis limits based on slider positions and visible data."""
         wn_low = self.range_slider.low
@@ -396,12 +451,9 @@ class CanvasWidget(QWidget):
                 y_maxs.append(np.nanmax(yd[mask]))
 
         if y_mins:
-            ymin, ymax = min(y_mins), max(y_maxs)
-            amp = ymax - ymin if ymax > ymin else 0.1
-            pad = amp * margin_pct
-            ymin -= pad
-            ymax += pad
-            # Apply vertical shift
+            ymin, ymax, amp = self._padded_limits(
+                min(y_mins), max(y_maxs), margin_pct, fallback_amp=0.1
+            )
             shift = v_shift * amp
             self.ax.set_ylim(ymin + shift, ymax + shift)
 
@@ -415,14 +467,13 @@ class CanvasWidget(QWidget):
                 d_maxs.append(np.nanmax(yd[mask]))
 
         if d_mins:
-            dmin, dmax = min(d_mins), max(d_maxs)
-            damp = dmax - dmin if dmax > dmin else 0.001
-            dpad = damp * margin_pct
-            self.ax_right.set_ylim(dmin - dpad, dmax + dpad)
+            dmin, dmax, _ = self._padded_limits(
+                min(d_mins), max(d_maxs), margin_pct, fallback_amp=0.001
+            )
+            self.ax_right.set_ylim(dmin, dmax)
 
-        # Zero-axes lines
-        # Remove previous zero-axes if any
-        for line in getattr(self, '_zero_lines', []):
+        # Zero line — redrawn every pass, so clear the previous one first
+        for line in self._zero_lines:
             try:
                 line.remove()
             except ValueError:

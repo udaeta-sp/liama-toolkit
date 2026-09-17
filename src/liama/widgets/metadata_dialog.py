@@ -5,11 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
-from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox,
-    QPushButton, QTableWidget, QTableWidgetItem, QDialogButtonBox,
+    QTableWidget, QTableWidgetItem, QDialogButtonBox,
 )
 
 from ..utils.theme import OK_BG, ERROR_BG
@@ -149,9 +148,7 @@ class MetadataDialog(QDialog):
         self._cat_labels.clear()
         for cat in self._categories:
             lbl = QLabel(f"[{cat}]")
-            lbl.setStyleSheet(
-                "background-color: #3c3c3c; padding: 2px 8px; border-radius: 3px;"
-            )
+            lbl.setProperty("role", "chip")
             self._cat_layout.addWidget(lbl)
             self._cat_labels.append(lbl)
 

@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton,
-    QScrollArea, QCheckBox, QLabel, QFrame, QToolTip,
+    QScrollArea, QCheckBox, QLabel, QFrame,
 )
 
 from ..core.spectrum import Spectrum
@@ -110,7 +109,6 @@ class SpectrumListPanel(QWidget):
         super().__init__(parent)
         self._spectra: list[Spectrum] = []
         self._items: list[SpectrumItemWidget] = []
-        self._metadata_keys: list[str] = []
         self._setup_ui()
 
     def _setup_ui(self):
@@ -226,13 +224,6 @@ class SpectrumListPanel(QWidget):
         if changes:
             self.batch_toggled.emit(changes)
 
-    def set_checked(self, index: int, checked: bool):
-        """Programmatically set checkbox state."""
-        if 0 <= index < len(self._items):
-            self._items[index].checkbox.blockSignals(True)
-            self._items[index].checkbox.setChecked(checked)
-            self._items[index].checkbox.blockSignals(False)
-
     def set_spectrum_color(self, index: int, color: str | None):
         """Remember color assignment for a spectrum (persists after unstaging)."""
         if 0 <= index < len(self._items):
@@ -242,8 +233,3 @@ class SpectrumListPanel(QWidget):
         """Refresh all metadata badges after metadata import."""
         for item in self._items:
             item.refresh_metadata()
-
-    def update_metadata_keys(self, keys: list[str]):
-        """Update known metadata keys for search matching."""
-        self._metadata_keys = keys
-        self.refresh_metadata()

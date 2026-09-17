@@ -212,3 +212,6 @@ analysis.png
 *.bak
 .vscode/
 .idea/
+
+# Claude Code local session state and worktrees
+.claude/

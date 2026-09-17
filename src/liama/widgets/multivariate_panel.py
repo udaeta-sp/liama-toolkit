@@ -2,17 +2,18 @@
 
 from __future__ import annotations
 
+import matplotlib as mpl
 import numpy as np
 from PyQt6.QtCore import pyqtSignal, Qt
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QComboBox, QSpinBox, QDoubleSpinBox, QCheckBox,
-    QTextEdit, QGroupBox, QFileDialog, QFrame, QMessageBox,
+    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QPushButton,
+    QComboBox, QSpinBox, QDoubleSpinBox, QCheckBox, QTextEdit, QGroupBox,
+    QFileDialog, QFrame, QMessageBox, QSplitter, QScrollArea,
 )
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg, NavigationToolbar2QT
 from matplotlib.figure import Figure
 
-from ..utils.theme import BG_DARK, BG_MID, BORDER, FG_TEXT, FG_DIM
+from ..utils.theme import BG_DARK, FG_DIM, LT_BG
 from ..utils.colors import SPECTRUM_COLORS
 
 
@@ -48,7 +49,8 @@ class PipelineStepWidget(QFrame):
         info.setSpacing(0)
         lbl = QLabel(f"<b>{label}</b>")
         info.addWidget(lbl)
-        desc = QLabel(f"<span style='color:#a0a0a0; font-size:10px;'>{description}</span>")
+        desc = QLabel(description)
+        desc.setProperty("role", "subtle")
         desc.setWordWrap(True)
         info.addWidget(desc)
         layout.addLayout(info, 1)
@@ -116,9 +118,14 @@ class MultivariatePanel(QWidget):
         self._setup_ui()
 
     def _setup_ui(self):
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(4)
+        outer = QHBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        # Plot and controls share a draggable splitter so the control column
+        # can be widened (or collapsed) instead of squeezing the plot.
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        outer.addWidget(splitter)
 
         # ── Left: canvas + navigation toolbar + visibility toggles ──
         left = QVBoxLayout()
@@ -160,11 +167,14 @@ class MultivariatePanel(QWidget):
 
         left_w = QWidget()
         left_w.setLayout(left)
-        layout.addWidget(left_w, 2)
+        left_w.setMinimumWidth(320)
+        self.canvas.setMinimumSize(280, 240)
+        splitter.addWidget(left_w)
 
         # ── Right: controls ──
         right = QVBoxLayout()
         right.setSpacing(4)
+        right.setContentsMargins(4, 4, 4, 4)
 
         # Preprocessing pipeline
         pipe_group = QGroupBox("Pipeline de preprocesamiento")
@@ -172,25 +182,26 @@ class MultivariatePanel(QWidget):
         pipe_layout.setSpacing(2)
 
         range_row = QHBoxLayout()
+        range_row.setSpacing(4)
         range_row.addWidget(QLabel("Rango:"))
         self.wn_min_spin = QDoubleSpinBox()
         self.wn_min_spin.setRange(200, 5000)
         self.wn_min_spin.setValue(600)
         self.wn_min_spin.setDecimals(0)
-        self.wn_min_spin.setFixedWidth(65)
-        range_row.addWidget(self.wn_min_spin)
+        self.wn_min_spin.setMaximumWidth(70)
+        range_row.addWidget(self.wn_min_spin, 1)
         range_row.addWidget(QLabel("–"))
         self.wn_max_spin = QDoubleSpinBox()
         self.wn_max_spin.setRange(200, 5000)
         self.wn_max_spin.setValue(1800)
         self.wn_max_spin.setDecimals(0)
-        self.wn_max_spin.setFixedWidth(65)
-        range_row.addWidget(self.wn_max_spin)
+        self.wn_max_spin.setMaximumWidth(70)
+        range_row.addWidget(self.wn_max_spin, 1)
         range_row.addWidget(QLabel("cm⁻¹"))
-        self.full_range_cb = QCheckBox("Rango completo")
-        range_row.addWidget(self.full_range_cb)
-        range_row.addStretch()
         pipe_layout.addLayout(range_row)
+
+        self.full_range_cb = QCheckBox("Rango completo")
+        pipe_layout.addWidget(self.full_range_cb)
 
         self._pipeline_steps: list[PipelineStepWidget] = []
         self._pipe_container = QVBoxLayout()
@@ -233,7 +244,7 @@ class MultivariatePanel(QWidget):
         pipe_layout.addLayout(self._pipe_container)
 
         self._data_info = QLabel("Datos: —")
-        self._data_info.setStyleSheet("color: #a0a0a0; font-size: 11px;")
+        self._data_info.setProperty("role", "subtle")
         pipe_layout.addWidget(self._data_info)
 
         right.addWidget(pipe_group)
@@ -242,71 +253,77 @@ class MultivariatePanel(QWidget):
         model_group = QGroupBox("Análisis")
         model_layout = QVBoxLayout(model_group)
 
-        ctrl_row = QHBoxLayout()
-        ctrl_row.addWidget(QLabel("Modelo:"))
+        ctrl = QGridLayout()
+        ctrl.setSpacing(4)
+        ctrl.setColumnStretch(1, 1)
+        ctrl.setColumnStretch(3, 1)
+
+        ctrl.addWidget(QLabel("Modelo:"), 0, 0)
         self.model_combo = QComboBox()
         self.model_combo.addItems(["PCA", "PLS-DA", "Random Forest"])
-        ctrl_row.addWidget(self.model_combo)
+        ctrl.addWidget(self.model_combo, 0, 1, 1, 3)
 
-        ctrl_row.addWidget(QLabel("Categoría:"))
+        ctrl.addWidget(QLabel("Categoría:"), 1, 0)
         self.category_combo = QComboBox()
-        self.category_combo.setMinimumWidth(90)
-        ctrl_row.addWidget(self.category_combo)
+        ctrl.addWidget(self.category_combo, 1, 1, 1, 3)
 
-        ctrl_row.addWidget(QLabel("Test:"))
+        ctrl.addWidget(QLabel("Test:"), 2, 0)
         self.test_spin = QDoubleSpinBox()
         self.test_spin.setRange(0.1, 0.5)
         self.test_spin.setValue(0.30)
         self.test_spin.setSingleStep(0.05)
-        self.test_spin.setFixedWidth(55)
-        ctrl_row.addWidget(self.test_spin)
+        ctrl.addWidget(self.test_spin, 2, 1)
 
-        ctrl_row.addWidget(QLabel("Seed:"))
+        ctrl.addWidget(QLabel("Seed:"), 2, 2)
         self.seed_spin = QSpinBox()
         self.seed_spin.setRange(0, 99999)
         self.seed_spin.setValue(42)
-        self.seed_spin.setFixedWidth(60)
-        ctrl_row.addWidget(self.seed_spin)
-        model_layout.addLayout(ctrl_row)
+        ctrl.addWidget(self.seed_spin, 2, 3)
+        model_layout.addLayout(ctrl)
 
         # PCA-specific controls
-        pca_row = QHBoxLayout()
+        pca = QGridLayout()
+        pca.setSpacing(4)
+        pca.setColumnStretch(1, 1)
+        pca.setColumnStretch(3, 1)
+
         self.biplot_cb = QCheckBox("Biplot")
-        pca_row.addWidget(self.biplot_cb)
-        pca_row.addWidget(QLabel("Top:"))
+        pca.addWidget(self.biplot_cb, 0, 0, 1, 4)
+
+        pca.addWidget(QLabel("Top:"), 1, 0)
         self.biplot_top = QSpinBox()
         self.biplot_top.setRange(1, 50)
         self.biplot_top.setValue(10)
-        self.biplot_top.setFixedWidth(50)
-        pca_row.addWidget(self.biplot_top)
-        pca_row.addWidget(QLabel("Escala:"))
+        pca.addWidget(self.biplot_top, 1, 1)
+
+        pca.addWidget(QLabel("Escala:"), 1, 2)
         self.biplot_scale = QDoubleSpinBox()
         self.biplot_scale.setRange(0.1, 100.0)
         self.biplot_scale.setValue(1.0)
-        self.biplot_scale.setFixedWidth(58)
-        pca_row.addWidget(self.biplot_scale)
-        pca_row.addStretch()
+        pca.addWidget(self.biplot_scale, 1, 3)
 
         btn_loadings = QPushButton("Loadings → Vista")
         btn_loadings.clicked.connect(self._send_loadings_to_vista)
-        pca_row.addWidget(btn_loadings)
-        model_layout.addLayout(pca_row)
+        pca.addWidget(btn_loadings, 2, 0, 1, 4)
+        model_layout.addLayout(pca)
 
         # Projection
-        proj_row = QHBoxLayout()
-        proj_row.addWidget(QLabel("Proyectar:"))
+        proj = QGridLayout()
+        proj.setSpacing(4)
+        proj.setColumnStretch(1, 1)
+        proj.addWidget(QLabel("Proyectar:"), 0, 0)
         self.project_combo = QComboBox()
-        self.project_combo.setToolTip("Espectros fuera del stage para proyectar en ejes existentes")
-        proj_row.addWidget(self.project_combo, 1)
+        self.project_combo.setToolTip(
+            "Espectros fuera del stage para proyectar en ejes existentes"
+        )
+        proj.addWidget(self.project_combo, 0, 1)
         btn_project = QPushButton("Proyectar")
         btn_project.clicked.connect(self._project_sample)
-        proj_row.addWidget(btn_project)
-        model_layout.addLayout(proj_row)
+        proj.addWidget(btn_project, 1, 0, 1, 2)
+        model_layout.addLayout(proj)
 
         btn_run = QPushButton("Ejecutar análisis")
-        btn_run.setStyleSheet(
-            "background-color: #4a9eff; color: white; font-weight: bold; padding: 8px;"
-        )
+        btn_run.setProperty("role", "primary")
         btn_run.clicked.connect(self._run_analysis)
         model_layout.addWidget(btn_run)
 
@@ -317,38 +334,53 @@ class MultivariatePanel(QWidget):
         results_layout = QVBoxLayout(results_group)
         self._results_text = QTextEdit()
         self._results_text.setReadOnly(True)
-        self._results_text.setMaximumHeight(150)
-        self._results_text.setStyleSheet(
-            f"background-color: {BG_MID}; color: {FG_TEXT}; "
-            "font-family: 'Consolas', monospace; font-size: 11px;"
-        )
+        self._results_text.setMinimumHeight(90)
+        self._results_text.setMaximumHeight(220)
+        self._results_text.setProperty("role", "report")
         results_layout.addWidget(self._results_text)
 
-        export_row = QHBoxLayout()
         btn_save_plot = QPushButton("Guardar gráfico...")
         btn_save_plot.clicked.connect(self._save_plot)
-        export_row.addWidget(btn_save_plot)
-        btn_save_csv = QPushButton("Guardar resultados CSV...")
-        btn_save_csv.clicked.connect(self._save_results)
-        export_row.addWidget(btn_save_csv)
-        results_layout.addLayout(export_row)
+        results_layout.addWidget(btn_save_plot)
+
+        btn_save_report = QPushButton("Guardar reporte...")
+        btn_save_report.clicked.connect(self._save_results)
+        results_layout.addWidget(btn_save_report)
 
         right.addWidget(results_group)
 
+        right.addStretch()
         right_w = QWidget()
         right_w.setLayout(right)
-        layout.addWidget(right_w, 1)
+
+        # The control stack is taller than a laptop screen — scroll it rather
+        # than letting the bottom groups get clipped.
+        right_scroll = QScrollArea()
+        right_scroll.setWidgetResizable(True)
+        right_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        right_scroll.setWidget(right_w)
+        right_scroll.setMinimumWidth(260)
+        splitter.addWidget(right_scroll)
+
+        splitter.setStretchFactor(0, 3)
+        splitter.setStretchFactor(1, 2)
+        splitter.setSizes([700, 420])
 
     # ──────────────────────────────────────────────────────────────────
     # Axis styling
     # ──────────────────────────────────────────────────────────────────
 
     def _style_ax(self):
-        import matplotlib as mpl
         self.ax.set_facecolor(mpl.rcParams["axes.facecolor"])
         self.ax.tick_params(colors=mpl.rcParams["xtick.color"])
         for spine in self.ax.spines.values():
             spine.set_color(mpl.rcParams["axes.edgecolor"])
+
+    def apply_theme(self, dark: bool):
+        """Repaint the figure for the active theme."""
+        self.figure.set_facecolor(BG_DARK if dark else LT_BG)
+        self._style_ax()
+        self.canvas.draw_idle()
 
     # ──────────────────────────────────────────────────────────────────
     # Pipeline step reordering
@@ -468,7 +500,6 @@ class MultivariatePanel(QWidget):
         leg = self.ax.get_legend()
         if leg:
             leg.remove()
-        import matplotlib as mpl
         self.figure.legend(
             handles, labels,
             loc="upper left",
@@ -559,7 +590,6 @@ class MultivariatePanel(QWidget):
                 )
                 self._biplot_texts.append(txt)
 
-        import matplotlib as mpl
         tc = mpl.rcParams["text.color"]
         self.ax.set_xlabel(f"PC1 ({var1:.1f}%)", color=tc)
         self.ax.set_ylabel(f"PC2 ({var2:.1f}%)", color=tc)
@@ -609,7 +639,6 @@ class MultivariatePanel(QWidget):
                 )
                 self._annotations.append(ann)
 
-        import matplotlib as mpl
         tc = mpl.rcParams["text.color"]
         self.ax.set_xlabel("LV1", color=tc)
         self.ax.set_ylabel("LV2", color=tc)
@@ -638,7 +667,6 @@ class MultivariatePanel(QWidget):
         self.ax.barh(range(top_n), importances[top_idx], color="#4a9eff", alpha=0.8)
         self.ax.set_yticks(range(top_n))
         self.ax.set_yticklabels([f"{wn[i]:.0f} cm⁻¹" for i in top_idx])
-        import matplotlib as mpl
         tc = mpl.rcParams["text.color"]
         self.ax.set_xlabel("Feature Importance", color=tc)
         self.ax.set_title("Random Forest — Top Features", color=tc)
@@ -650,6 +678,24 @@ class MultivariatePanel(QWidget):
         text += "Confusion Matrix:\n"
         text += str(result.confusion)
         self._results_text.setPlainText(text)
+
+    def plot_projected_sample(self, name: str, x: float, y: float):
+        """Mark a sample projected onto the existing PCA axes."""
+        self.ax.scatter(
+            x, y, marker="*", s=200, c="#ff6b6b", edgecolors="white",
+            linewidth=1.5, zorder=20, label=f"→ {name}",
+        )
+        self.ax.annotate(
+            name, (x, y), fontsize=8, color="#ff6b6b",
+            xytext=(10, 10), textcoords="offset points",
+        )
+        self._apply_legend_outside()
+        self.canvas.draw_idle()
+
+    @property
+    def pca_result(self):
+        """Last fitted PCA, or None if no PCA has been run yet."""
+        return self._pca_result
 
     # ──────────────────────────────────────────────────────────────────
     # Export
@@ -668,8 +714,9 @@ class MultivariatePanel(QWidget):
             )
 
     def _save_results(self):
+        # This is the formatted report shown in the panel, not tabular data.
         path, _ = QFileDialog.getSaveFileName(
-            self, "Guardar resultados", "results.csv", "CSV (*.csv)"
+            self, "Guardar reporte", "resultados.txt", "Texto (*.txt)"
         )
         if path:
             text = self._results_text.toPlainText()

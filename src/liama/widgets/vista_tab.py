@@ -2,53 +2,22 @@
 
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QColor
+from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QScrollArea, QLabel,
-    QCheckBox, QPushButton, QDoubleSpinBox, QComboBox,
-    QColorDialog, QFrame, QGridLayout,
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QCheckBox,
+    QPushButton, QDoubleSpinBox, QComboBox, QFrame,
 )
 
-from ..utils.colors import get_spectrum_color, get_derivative_color
+from ..utils.colors import get_spectrum_color
 from .canvas_widget import SpectrumViewConfig, DerivativeViewConfig
-
-
-class ColorButton(QPushButton):
-    """Small button that shows a color swatch and opens a color picker."""
-    color_changed = pyqtSignal(str)
-
-    def __init__(self, color: str = "#4a9eff", parent=None):
-        super().__init__(parent)
-        self._color = color
-        self.setFixedSize(24, 24)
-        self._update_style()
-        self.clicked.connect(self._pick_color)
-
-    def _update_style(self):
-        self.setStyleSheet(
-            f"background-color: {self._color}; border: 1px solid #555; border-radius: 3px;"
-        )
-
-    def _pick_color(self):
-        c = QColorDialog.getColor(QColor(self._color), self)
-        if c.isValid():
-            self._color = c.name()
-            self._update_style()
-            self.color_changed.emit(self._color)
-
-    @property
-    def color(self) -> str:
-        return self._color
-
-    def set_color(self, color: str):
-        self._color = color
-        self._update_style()
+from .color_button import ColorButton
 
 
 class SpectrumRow(QFrame):
     """One row of spectrum controls in the Vista tab."""
     changed = pyqtSignal()
+    move_requested = pyqtSignal(int)      # -1 up, +1 down
+    derivative_requested = pyqtSignal()
 
     def __init__(self, config: SpectrumViewConfig, parent=None):
         super().__init__(parent)
@@ -129,20 +98,20 @@ class SpectrumRow(QFrame):
         btn_up = QPushButton("▲")
         btn_up.setFixedSize(22, 22)
         btn_up.setToolTip("Mover arriba")
-        btn_up.clicked.connect(lambda: self._emit_move(-1))
+        btn_up.clicked.connect(lambda: self.move_requested.emit(-1))
         layout.addWidget(btn_up)
 
         btn_down = QPushButton("▼")
         btn_down.setFixedSize(22, 22)
         btn_down.setToolTip("Mover abajo")
-        btn_down.clicked.connect(lambda: self._emit_move(1))
+        btn_down.clicked.connect(lambda: self.move_requested.emit(1))
         layout.addWidget(btn_down)
 
         # Add derivative button
         btn_deriv = QPushButton("D²")
         btn_deriv.setFixedSize(28, 22)
         btn_deriv.setToolTip("Agregar derivada segunda")
-        btn_deriv.clicked.connect(self._request_derivative)
+        btn_deriv.clicked.connect(self.derivative_requested.emit)
         layout.addWidget(btn_deriv)
 
     def _on_change(self, *_):
@@ -154,37 +123,27 @@ class SpectrumRow(QFrame):
         self.config.offset = self.offset_spin.value()
         self.changed.emit()
 
-    def _emit_move(self, direction: int):
-        self.setProperty("move_direction", direction)
-        self.changed.emit()
-
-    def _request_derivative(self):
-        self.setProperty("request_derivative", True)
-        self.changed.emit()
-
     def update_from_config(self):
         """Sync widgets from config."""
         self.vis_cb.blockSignals(True)
         self.vis_cb.setChecked(self.config.visible)
         self.vis_cb.blockSignals(False)
         self.color_btn.set_color(self.config.color)
-        self.lw_spin.blockSignals(True)
-        self.lw_spin.setValue(self.config.linewidth)
-        self.lw_spin.blockSignals(False)
-        self.alpha_spin.blockSignals(True)
-        self.alpha_spin.setValue(self.config.alpha)
-        self.alpha_spin.blockSignals(False)
-        self.scale_spin.blockSignals(True)
-        self.scale_spin.setValue(self.config.scale)
-        self.scale_spin.blockSignals(False)
-        self.offset_spin.blockSignals(True)
-        self.offset_spin.setValue(self.config.offset)
-        self.offset_spin.blockSignals(False)
+        for spin, value in (
+            (self.lw_spin, self.config.linewidth),
+            (self.alpha_spin, self.config.alpha),
+            (self.scale_spin, self.config.scale),
+            (self.offset_spin, self.config.offset),
+        ):
+            spin.blockSignals(True)
+            spin.setValue(value)
+            spin.blockSignals(False)
 
 
 class DerivativeRow(QFrame):
     """One row of derivative controls in the Vista tab."""
     changed = pyqtSignal()
+    move_requested = pyqtSignal(int)      # -1 up, +1 down
     remove_requested = pyqtSignal()
 
     def __init__(self, config: DerivativeViewConfig, parent=None):
@@ -210,7 +169,7 @@ class DerivativeRow(QFrame):
         # Name
         name_lbl = QLabel(f"D² {self.config.name}")
         name_lbl.setMinimumWidth(120)
-        name_lbl.setStyleSheet("color: #a0a0a0; font-style: italic;")
+        name_lbl.setProperty("role", "subtleItalic")
         layout.addWidget(name_lbl, 1)
 
         # Color
@@ -260,11 +219,11 @@ class DerivativeRow(QFrame):
         # Move up/down
         btn_up = QPushButton("▲")
         btn_up.setFixedSize(22, 22)
-        btn_up.clicked.connect(lambda: self._emit_move(-1))
+        btn_up.clicked.connect(lambda: self.move_requested.emit(-1))
         layout.addWidget(btn_up)
         btn_down = QPushButton("▼")
         btn_down.setFixedSize(22, 22)
-        btn_down.clicked.connect(lambda: self._emit_move(1))
+        btn_down.clicked.connect(lambda: self.move_requested.emit(1))
         layout.addWidget(btn_down)
 
         # Remove
@@ -283,9 +242,21 @@ class DerivativeRow(QFrame):
         self.config.offset = self.offset_spin.value()
         self.changed.emit()
 
-    def _emit_move(self, direction: int):
-        self.setProperty("move_direction", direction)
-        self.changed.emit()
+    def update_from_config(self):
+        """Sync widgets from config."""
+        self.vis_cb.blockSignals(True)
+        self.vis_cb.setChecked(self.config.visible)
+        self.vis_cb.blockSignals(False)
+        self.color_btn.set_color(self.config.color)
+        for spin, value in (
+            (self.lw_spin, self.config.linewidth),
+            (self.alpha_spin, self.config.alpha),
+            (self.scale_spin, self.config.scale),
+            (self.offset_spin, self.config.offset),
+        ):
+            spin.blockSignals(True)
+            spin.setValue(value)
+            spin.blockSignals(False)
 
 
 class VistaTab(QWidget):
@@ -324,19 +295,17 @@ class VistaTab(QWidget):
         toolbar.addStretch()
         layout.addLayout(toolbar)
 
-        # Scroll area for spectra and derivatives
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
+        # Rows container — MainWindow wraps this whole tab in a scroll area,
+        # so no second scroll view here.
         self._content = QWidget()
         self._content_layout = QVBoxLayout(self._content)
         self._content_layout.setContentsMargins(0, 0, 0, 0)
         self._content_layout.setSpacing(0)
-        scroll.setWidget(self._content)
-        layout.addWidget(scroll, 1)
+        layout.addWidget(self._content, 1)
 
         # Batch apply bar
         apply_frame = QFrame()
-        apply_frame.setStyleSheet("border-top: 1px solid #555;")
+        apply_frame.setProperty("role", "toolbarTop")
         apply_layout = QHBoxLayout(apply_frame)
         apply_layout.setContentsMargins(4, 4, 4, 4)
         apply_layout.addWidget(QLabel("Aplicar a selección:"))
@@ -396,12 +365,18 @@ class VistaTab(QWidget):
         # Spectrum section header
         if spectrum_configs:
             hdr = QLabel("  Espectros")
-            hdr.setStyleSheet("font-weight: bold; color: #e0e0e0; padding: 2px;")
+            hdr.setProperty("role", "sectionHeader")
             self._content_layout.addWidget(hdr)
 
         for i, cfg in enumerate(spectrum_configs):
             row = SpectrumRow(cfg)
-            row.changed.connect(lambda idx=i: self._on_spectrum_row_changed(idx))
+            row.changed.connect(self.redraw_requested.emit)
+            row.move_requested.connect(
+                lambda direction, idx=i: self._move_spectrum(idx, direction)
+            )
+            row.derivative_requested.connect(
+                lambda idx=i: self.derivative_requested.emit(idx)
+            )
             self._spectrum_rows.append(row)
             self._content_layout.addWidget(row)
 
@@ -409,52 +384,36 @@ class VistaTab(QWidget):
         if derivative_configs:
             sep = QFrame()
             sep.setFrameShape(QFrame.Shape.HLine)
-            sep.setStyleSheet("color: #555;")
             self._content_layout.addWidget(sep)
             hdr = QLabel("  Derivadas")
-            hdr.setStyleSheet("font-weight: bold; color: #a0a0a0; padding: 2px;")
+            hdr.setProperty("role", "sectionHeader")
             self._content_layout.addWidget(hdr)
 
         for i, dcfg in enumerate(derivative_configs):
             row = DerivativeRow(dcfg)
-            row.changed.connect(lambda idx=i: self._on_deriv_row_changed(idx))
+            row.changed.connect(self.redraw_requested.emit)
+            row.move_requested.connect(
+                lambda direction, idx=i: self.move_requested.emit(
+                    "derivative", idx, direction
+                )
+            )
             row.remove_requested.connect(lambda idx=i: self.derivative_removed.emit(idx))
             self._derivative_rows.append(row)
             self._content_layout.addWidget(row)
 
         self._content_layout.addStretch()
 
-    def _on_spectrum_row_changed(self, index: int):
-        row = self._spectrum_rows[index]
-        # Check if this is a move request
-        direction = row.property("move_direction")
-        if direction is not None:
-            row.setProperty("move_direction", None)
-            # Check if multiple selected — move as group
-            selected = [i for i, r in enumerate(self._spectrum_rows) if r.select_cb.isChecked()]
-            if selected and index in selected:
-                for idx in (selected if direction < 0 else reversed(selected)):
-                    self.move_requested.emit("spectrum", idx, direction)
-            else:
-                self.move_requested.emit("spectrum", index, direction)
+    def _move_spectrum(self, index: int, direction: int):
+        """Move one row, or the whole multi-selection if this row is part of it."""
+        selected = [
+            i for i, r in enumerate(self._spectrum_rows) if r.select_cb.isChecked()
+        ]
+        if index not in selected:
+            self.move_requested.emit("spectrum", index, direction)
             return
-
-        # Check derivative request
-        if row.property("request_derivative"):
-            row.setProperty("request_derivative", None)
-            self.derivative_requested.emit(index)
-            return
-
-        self.redraw_requested.emit()
-
-    def _on_deriv_row_changed(self, index: int):
-        row = self._derivative_rows[index]
-        direction = row.property("move_direction")
-        if direction is not None:
-            row.setProperty("move_direction", None)
-            self.move_requested.emit("derivative", index, direction)
-            return
-        self.redraw_requested.emit()
+        # Moving down must start from the bottom, or rows overwrite each other
+        for idx in (selected if direction < 0 else reversed(selected)):
+            self.move_requested.emit("spectrum", idx, direction)
 
     def _apply_to_selected(self):
         """Apply batch settings to all selected rows."""
@@ -463,21 +422,13 @@ class VistaTab(QWidget):
         alpha = self._batch_alpha.value()
         scale = self._batch_scale.value()
 
-        for row in self._spectrum_rows:
+        for row in self._spectrum_rows + self._derivative_rows:
             if row.select_cb.isChecked():
                 row.config.color = color
                 row.config.linewidth = lw
                 row.config.alpha = alpha
                 row.config.scale = scale
                 row.update_from_config()
-
-        for row in self._derivative_rows:
-            if row.select_cb.isChecked():
-                row.config.color = color
-                row.config.linewidth = lw
-                row.config.alpha = alpha
-                row.config.scale = scale
-                row.changed.emit()
 
         self.redraw_requested.emit()
 
@@ -528,9 +479,3 @@ class VistaTab(QWidget):
         for cat in categories:
             self.color_by_combo.addItem(cat)
         self.color_by_combo.blockSignals(False)
-
-    def get_spectrum_configs(self) -> list[SpectrumViewConfig]:
-        return [row.config for row in self._spectrum_rows]
-
-    def get_derivative_configs(self) -> list[DerivativeViewConfig]:
-        return [row.config for row in self._derivative_rows]

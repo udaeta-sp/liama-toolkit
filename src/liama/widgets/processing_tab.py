@@ -46,7 +46,7 @@ class ProcessingTab(QWidget):
             "Afecta: vista de espectros, derivada 2ª en vista, y detección de picos.\n"
             "NO afecta el pipeline de análisis multivariado (tiene sus propios parámetros)."
         )
-        self._info_label.setStyleSheet("color: #a0a0a0; font-size: 11px;")
+        self._info_label.setProperty("role", "subtle")
         self._info_label.setWordWrap(True)
         layout.addWidget(self._info_label)
         layout.addStretch()

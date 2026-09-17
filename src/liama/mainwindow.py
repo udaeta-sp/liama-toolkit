@@ -7,14 +7,15 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QGuiApplication
 from PyQt6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QSplitter, QTabWidget, QToolBar, QPushButton,
-    QComboBox, QLabel, QFileDialog, QStatusBar, QMessageBox,
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QSplitter, QTabWidget,
+    QToolBar, QPushButton, QComboBox, QLabel, QFileDialog,
+    QStatusBar, QMessageBox, QScrollArea, QFrame, QStackedWidget,
 )
 
-from .core.spectrum import Spectrum
+from .core.spectrum import Spectrum, interp_to_grid
 from .core.spa_reader import scan_folder
 from .core.processing import smooth_sg, second_derivative_sg, apply_pipeline_to_matrix
 from .core.peak_detection import detect_peaks
@@ -29,11 +30,9 @@ from .widgets.export_tab import ExportTab
 from .widgets.multivariate_panel import MultivariatePanel
 from .widgets.metadata_dialog import MetadataDialog
 
-from .utils.colors import get_spectrum_color, get_derivative_color, SPECTRUM_COLORS
+from .utils.colors import get_spectrum_color, get_derivative_color
 from .utils.theme import (
     QSS, QSS_LIGHT, apply_mpl_dark_theme, apply_mpl_light_theme,
-    BG_DARK, BG_MID, BORDER, FG_TEXT, FG_DIM,
-    LT_BG, LT_BG_MID, LT_BORDER, LT_FG_TEXT, LT_FG_DIM,
 )
 
 log = logging.getLogger(__name__)
@@ -43,7 +42,10 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("LIAMA Toolkit — FTIR-ATR")
-        self.setMinimumSize(1200, 750)
+        # Must stay under a 1366x768 laptop's usable area, or the window cannot
+        # shrink to fit and the lower controls end up off-screen.
+        self.setMinimumSize(900, 560)
+        self._resize_to_screen()
 
         # ── Data state ──
         self._all_spectra: list[Spectrum] = []       # full list from folder
@@ -64,6 +66,27 @@ class MainWindow(QMainWindow):
     # ─────────────────────────────────────────────────────────────────
     # UI Construction
     # ─────────────────────────────────────────────────────────────────
+
+    def _resize_to_screen(self):
+        """Open at a comfortable size that still fits the current screen."""
+        screen = QGuiApplication.primaryScreen()
+        if screen is None:
+            self.resize(1200, 750)
+            return
+        avail = screen.availableGeometry()
+        self.resize(
+            min(1400, int(avail.width() * 0.9)),
+            min(850, int(avail.height() * 0.9)),
+        )
+
+    @staticmethod
+    def _scrollable(widget: QWidget) -> QScrollArea:
+        """Wrap a tab page so it stays reachable on short or narrow screens."""
+        area = QScrollArea()
+        area.setWidgetResizable(True)
+        area.setFrameShape(QFrame.Shape.NoFrame)
+        area.setWidget(widget)
+        return area
 
     def _build_ui(self):
         # Toolbar
@@ -107,7 +130,6 @@ class MainWindow(QMainWindow):
         self._h_splitter.addWidget(self._spectrum_list)
 
         # Right side: stacked layout for spectra mode vs multivariate mode
-        from PyQt6.QtWidgets import QStackedWidget
         self._right_stack = QStackedWidget()
 
         # --- Page 0: Spectra mode (canvas + tabs) ---
@@ -128,14 +150,17 @@ class MainWindow(QMainWindow):
         self._annotations_tab = AnnotationsTab()
         self._export_tab = ExportTab()
 
-        self._tabs.addTab(self._vista_tab, "Vista")
-        self._tabs.addTab(self._processing_tab, "Procesamiento")
-        self._tabs.addTab(self._annotations_tab, "Anotaciones")
-        self._tabs.addTab(self._export_tab, "Exportar")
-        self._tabs.setMinimumHeight(180)
+        # Each page is wrapped so its controls stay reachable by scrolling
+        # instead of being clipped on a laptop screen.
+        self._tabs.addTab(self._scrollable(self._vista_tab), "Vista")
+        self._tabs.addTab(self._scrollable(self._processing_tab), "Procesamiento")
+        self._tabs.addTab(self._scrollable(self._annotations_tab), "Anotaciones")
+        self._tabs.addTab(self._scrollable(self._export_tab), "Exportar")
+        self._tabs.setMinimumHeight(110)
 
+        self._canvas.setMinimumHeight(220)
         self._v_splitter.addWidget(self._tabs)
-        self._v_splitter.setSizes([500, 250])
+        self._v_splitter.setSizes([520, 260])
         self._v_splitter.setStretchFactor(0, 3)
         self._v_splitter.setStretchFactor(1, 1)
 
@@ -225,7 +250,6 @@ class MainWindow(QMainWindow):
         errors = [s for s in self._all_spectra if s.load_error]
         msg = f"{len(self._all_spectra)} espectros cargados"
         if errors:
-            error_names = [s.name for s in errors]
             msg += f" ({len(errors)} con error)"
             self._status.showMessage(msg)
             # Show error details in a dialog
@@ -265,7 +289,7 @@ class MainWindow(QMainWindow):
                     matched += 1
 
             self._metadata_categories = categories
-            self._spectrum_list.update_metadata_keys(categories)  # also refreshes badges
+            self._spectrum_list.refresh_metadata()
             self._vista_tab.update_metadata_categories(categories)
             self._vista_tab.set_metadata_lookup(mapping)
             self._multivariate.set_categories(categories)
@@ -411,7 +435,24 @@ class MainWindow(QMainWindow):
         d2 = second_derivative_sg(y, window=window, polyorder=polyorder, delta=delta)
         return wn, d2
 
-    def _redraw(self):
+    def _build_plot_data(self) -> tuple[list, list]:
+        """Compute the (spectra, derivatives) curves for the current stage."""
+        spec_data = [
+            self._get_processed_spectrum(self._all_spectra[cfg.spectrum_index])
+            for cfg in self._spectrum_configs
+        ]
+
+        deriv_data = []
+        for dcfg in self._derivative_configs:
+            if dcfg.parent_index < len(self._stage_indices):
+                sp = self._all_spectra[self._stage_indices[dcfg.parent_index]]
+                deriv_data.append(self._get_derivative(sp))
+            else:
+                deriv_data.append((np.array([]), np.array([])))
+
+        return spec_data, deriv_data
+
+    def _redraw(self, peaks: list[dict] | None = None):
         """Redraw the canvas with current configs."""
         if self._current_mode != "spectra":
             return
@@ -421,26 +462,12 @@ class MainWindow(QMainWindow):
             self._color_memory[cfg.spectrum_index] = cfg.color
             self._spectrum_list.set_spectrum_color(cfg.spectrum_index, cfg.color)
 
-        spec_data = []
-        for cfg in self._spectrum_configs:
-            sp = self._all_spectra[cfg.spectrum_index]
-            wn, y = self._get_processed_spectrum(sp)
-            spec_data.append((wn, y))
-
-        deriv_data = []
-        for dcfg in self._derivative_configs:
-            if dcfg.parent_index < len(self._stage_indices):
-                sp_idx = self._stage_indices[dcfg.parent_index]
-                sp = self._all_spectra[sp_idx]
-                wn, d2 = self._get_derivative(sp)
-                deriv_data.append((wn, d2))
-            else:
-                deriv_data.append((np.array([]), np.array([])))
-
+        spec_data, deriv_data = self._build_plot_data()
         self._canvas.update_spectra(
             spec_data, self._spectrum_configs,
             deriv_data, self._derivative_configs,
             vlines=self._annotations_tab.vlines,
+            peaks=peaks,
         )
 
     # ─────────────────────────────────────────────────────────────────
@@ -458,51 +485,20 @@ class MainWindow(QMainWindow):
 
     def _toggle_theme(self):
         """Switch between dark and light theme."""
-        from PyQt6.QtWidgets import QApplication
         self._dark_theme = not self._dark_theme
 
         if self._dark_theme:
             QApplication.instance().setStyleSheet(QSS)
             apply_mpl_dark_theme()
             self._btn_theme.setText("Tema claro")
-            # Update canvas colors
-            self._canvas.plot_config.fig_bg = BG_DARK
-            self._canvas.plot_config.plot_bg = BG_MID
-            self._canvas.plot_config.text_color = FG_TEXT
-            self._canvas.plot_config.tick_color = FG_DIM
-            self._canvas.plot_config.spine_color = BORDER
-            self._canvas.figure.set_facecolor(BG_DARK)
-            self._canvas.canvas.setStyleSheet(f"background-color: {BG_DARK};")
-            # Multivariate canvas
-            self._multivariate.figure.set_facecolor(BG_DARK)
         else:
             QApplication.instance().setStyleSheet(QSS_LIGHT)
             apply_mpl_light_theme()
             self._btn_theme.setText("Tema oscuro")
-            self._canvas.plot_config.fig_bg = LT_BG
-            self._canvas.plot_config.plot_bg = LT_BG_MID
-            self._canvas.plot_config.text_color = LT_FG_TEXT
-            self._canvas.plot_config.tick_color = LT_FG_DIM
-            self._canvas.plot_config.spine_color = LT_BORDER
-            self._canvas.figure.set_facecolor(LT_BG)
-            self._canvas.canvas.setStyleSheet(f"background-color: {LT_BG};")
-            # Multivariate canvas
-            self._multivariate.figure.set_facecolor(LT_BG)
 
-        # Update range slider colors
-        if self._dark_theme:
-            self._canvas.range_slider.groove_color = "#3c3c3c"
-            self._canvas.range_slider.handle_fill = "#ffffff"
-        else:
-            self._canvas.range_slider.groove_color = "#cccccc"
-            self._canvas.range_slider.handle_fill = "#ffffff"
-        self._canvas.range_slider.update()
-
-        # Refresh both canvases
-        self._canvas._style_axes()
+        self._canvas.apply_theme(self._dark_theme)
+        self._multivariate.apply_theme(self._dark_theme)
         self._redraw()
-        self._multivariate._style_ax()
-        self._multivariate.canvas.draw_idle()
 
     # ─────────────────────────────────────────────────────────────────
     # Peak detection
@@ -525,18 +521,7 @@ class MainWindow(QMainWindow):
         )
 
         self._annotations_tab.set_peaks(peaks)
-        # Redraw with peaks
-        self._canvas.update_spectra(
-            [(self._get_processed_spectrum(self._all_spectra[c.spectrum_index]))
-             for c in self._spectrum_configs],
-            self._spectrum_configs,
-            [(self._get_derivative(self._all_spectra[self._stage_indices[d.parent_index]])
-              if d.parent_index < len(self._stage_indices) else (np.array([]), np.array([])))
-             for d in self._derivative_configs],
-            self._derivative_configs,
-            vlines=self._annotations_tab.vlines,
-            peaks=peaks,
-        )
+        self._redraw(peaks=peaks)
         self._status.showMessage(f"{len(peaks)} picos detectados en {name}")
 
     # ─────────────────────────────────────────────────────────────────
@@ -574,26 +559,30 @@ class MainWindow(QMainWindow):
                 return
 
             template_cfg = visible_cfgs[0]
-            for cfg in self._spectrum_configs:
-                # Temporarily make only this one visible
-                old_vis = cfg.visible
-                for c in self._spectrum_configs:
-                    c.visible = False
-                cfg.visible = True
-                cfg.color = template_cfg.color
-                cfg.linewidth = template_cfg.linewidth
-                cfg.alpha = template_cfg.alpha
+            saved = [
+                (c.visible, c.color, c.linewidth, c.alpha)
+                for c in self._spectrum_configs
+            ]
+            try:
+                for cfg in self._spectrum_configs:
+                    # Render one spectrum at a time using the template's style
+                    for c in self._spectrum_configs:
+                        c.visible = False
+                    cfg.visible = True
+                    cfg.color = template_cfg.color
+                    cfg.linewidth = template_cfg.linewidth
+                    cfg.alpha = template_cfg.alpha
 
+                    self._redraw()
+                    path = folder / f"{cfg.name}.{fmt}"
+                    self._canvas.export_figure(
+                        str(path), dpi=dpi, use_export_bg=white_bg,
+                    )
+            finally:
+                for c, (vis, color, lw, alpha) in zip(self._spectrum_configs, saved):
+                    c.visible, c.color, c.linewidth, c.alpha = vis, color, lw, alpha
+                self._rebuild_vista()
                 self._redraw()
-                path = folder / f"{cfg.name}.{fmt}"
-                self._canvas.export_figure(
-                    str(path), dpi=dpi, use_export_bg=white_bg,
-                )
-                cfg.visible = old_vis
-
-            # Restore visibility
-            self._rebuild_vista()
-            self._redraw()
             self._status.showMessage(
                 f"Batch exportado: {len(self._spectrum_configs)} imágenes en {folder}"
             )
@@ -625,13 +614,10 @@ class MainWindow(QMainWindow):
                 y = sp.interpolate_to(wn_ref)
             elif params["data_type"] == "smoothed":
                 _, y_proc = self._get_processed_spectrum(sp)
-                # Interpolate processed onto reference grid
-                y_proc_interp = np.interp(wn_ref[::-1], sp.wavenumbers[::-1], y_proc[::-1])[::-1]
-                y = y_proc_interp
+                y = interp_to_grid(wn_ref, sp.wavenumbers, y_proc)
             else:  # derivative
                 _, d2 = self._get_derivative(sp)
-                d2_interp = np.interp(wn_ref[::-1], sp.wavenumbers[::-1], d2[::-1])[::-1]
-                y = d2_interp
+                y = interp_to_grid(wn_ref, sp.wavenumbers, d2)
 
             row = {"Nombre": sp.name}
             if params["include_metadata"]:
@@ -701,14 +687,11 @@ class MainWindow(QMainWindow):
         steps = self._multivariate.get_pipeline_steps()
         X_proc, fit_params = apply_pipeline_to_matrix(wn_ref, X, steps)
 
-        # Get labels if needed
+        # Labels must come from the same `valid` list the matrix was built
+        # from, or rows and labels end up misaligned.
         labels = None
         if category:
-            labels = np.array([
-                self._all_spectra[idx].metadata.get(category, "?")
-                for idx in self._stage_indices
-                if self._all_spectra[idx].load_error is None
-            ])
+            labels = np.array([sp.metadata.get(category, "?") for sp in valid])
             unique = np.unique(labels)
             if len(unique) < 2 and model != "PCA":
                 QMessageBox.warning(
@@ -760,7 +743,8 @@ class MainWindow(QMainWindow):
 
     def _project_in_multivariate(self):
         """Project a sample onto existing PCA axes."""
-        if self._multivariate._pca_result is None:
+        result = self._multivariate.pca_result
+        if result is None:
             QMessageBox.warning(self, "Sin modelo", "Ejecutá PCA primero.")
             return
 
@@ -772,32 +756,14 @@ class MainWindow(QMainWindow):
         if sp is None or sp.load_error:
             return
 
-        result = self._multivariate._pca_result
         wn_ref = result.wavenumbers
-
-        # Interpolate onto same grid
         y = sp.interpolate_to(wn_ref).reshape(1, -1)
-
-        # Apply same pipeline
-        from .core.processing import apply_pipeline_to_matrix
         y_proc, _ = apply_pipeline_to_matrix(wn_ref, y, result.pipeline_steps)
-
-        # Project
         scores_new = result.project(y_proc)
 
-        # Plot on existing axes
-        self._multivariate.ax.scatter(
-            scores_new[0, 0], scores_new[0, 1],
-            marker="*", s=200, c="#ff6b6b", edgecolors="white",
-            linewidth=1.5, zorder=20, label=f"→ {name}",
+        self._multivariate.plot_projected_sample(
+            name, scores_new[0, 0], scores_new[0, 1]
         )
-        self._multivariate.ax.annotate(
-            name, (scores_new[0, 0], scores_new[0, 1]),
-            fontsize=8, color="#ff6b6b",
-            xytext=(10, 10), textcoords="offset points",
-        )
-        self._multivariate.ax.legend(fontsize=8)
-        self._multivariate.canvas.draw_idle()
         self._status.showMessage(f"Proyectado: {name}")
 
     # ─────────────────────────────────────────────────────────────────

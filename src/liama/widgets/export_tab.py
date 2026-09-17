@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QRadioButton, QButtonGroup, QSpinBox, QCheckBox,
-    QGroupBox, QFileDialog, QComboBox,
+    QGroupBox, QFileDialog,
 )
 
 

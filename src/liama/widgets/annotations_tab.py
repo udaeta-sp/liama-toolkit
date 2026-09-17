@@ -11,7 +11,8 @@ from PyQt6.QtWidgets import (
 )
 
 import pandas as pd
-from ..widgets.vista_tab import ColorButton
+
+from .color_button import ColorButton
 
 
 class AnnotationsTab(QWidget):
@@ -60,9 +61,7 @@ class AnnotationsTab(QWidget):
         ctrl.addWidget(self.distance_spin, 1, 3)
 
         btn_detect = QPushButton("Detectar picos")
-        btn_detect.setStyleSheet(
-            "font-weight: bold; padding: 6px 16px;"
-        )
+        btn_detect.setProperty("role", "primary")
         btn_detect.clicked.connect(self.detect_requested.emit)
         ctrl.addWidget(btn_detect, 2, 0, 1, 4)
 
@@ -132,7 +131,7 @@ class AnnotationsTab(QWidget):
         vl_grid.addWidget(self.vline_label_cb, 2, 0, 1, 2)
 
         btn_add = QPushButton("Agregar línea")
-        btn_add.setStyleSheet("font-weight: bold; padding: 6px 16px;")
+        btn_add.setProperty("role", "primary")
         btn_add.clicked.connect(self._add_vline)
         vl_grid.addWidget(btn_add, 2, 2, 1, 2)
 

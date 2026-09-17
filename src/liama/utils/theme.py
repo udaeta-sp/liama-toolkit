@@ -101,6 +101,61 @@ QRadioButton {{
     spacing: 6px;
     background: transparent;
 }}
+QRadioButton::indicator {{
+    width: 14px;
+    height: 14px;
+    border: 1px solid {BORDER};
+    border-radius: 8px;
+    background-color: {BG_MID};
+}}
+QRadioButton::indicator:hover {{
+    border-color: {ACCENT};
+}}
+QRadioButton::indicator:checked {{
+    background-color: {ACCENT};
+    border: 1px solid {ACCENT};
+}}
+
+QPushButton[role="primary"] {{
+    background-color: {ACCENT};
+    color: #ffffff;
+    font-weight: bold;
+    border: 1px solid {ACCENT};
+    padding: 8px 14px;
+}}
+QPushButton[role="primary"]:hover {{
+    background-color: #3a7fd5;
+    border-color: #3a7fd5;
+}}
+
+QLabel[role="sectionHeader"] {{
+    font-weight: bold;
+    color: {FG_TEXT};
+    padding: 2px;
+}}
+QLabel[role="subtle"] {{
+    color: {FG_DIM};
+    font-size: 11px;
+}}
+QLabel[role="subtleItalic"] {{
+    color: {FG_DIM};
+    font-style: italic;
+}}
+QLabel[role="chip"] {{
+    background-color: {BG_LIGHT};
+    color: {FG_TEXT};
+    padding: 2px 8px;
+    border-radius: 3px;
+}}
+QTextEdit[role="report"] {{
+    background-color: {BG_MID};
+    color: {FG_TEXT};
+    font-family: "Consolas", "DejaVu Sans Mono", monospace;
+    font-size: 11px;
+}}
+QFrame[role="toolbarTop"] {{
+    border-top: 1px solid {BORDER};
+}}
 
 QTabWidget::pane {{
     border: 1px solid {BORDER};
@@ -328,6 +383,61 @@ QRadioButton {{
     color: {LT_FG_TEXT};
     spacing: 6px;
     background: transparent;
+}}
+QRadioButton::indicator {{
+    width: 14px;
+    height: 14px;
+    border: 1px solid {LT_BORDER};
+    border-radius: 8px;
+    background-color: {LT_BG_MID};
+}}
+QRadioButton::indicator:hover {{
+    border-color: {LT_ACCENT};
+}}
+QRadioButton::indicator:checked {{
+    background-color: {LT_ACCENT};
+    border: 1px solid {LT_ACCENT};
+}}
+
+QPushButton[role="primary"] {{
+    background-color: {LT_ACCENT};
+    color: #ffffff;
+    font-weight: bold;
+    border: 1px solid {LT_ACCENT};
+    padding: 8px 14px;
+}}
+QPushButton[role="primary"]:hover {{
+    background-color: #1c5fd0;
+    border-color: #1c5fd0;
+}}
+
+QLabel[role="sectionHeader"] {{
+    font-weight: bold;
+    color: {LT_FG_TEXT};
+    padding: 2px;
+}}
+QLabel[role="subtle"] {{
+    color: {LT_FG_DIM};
+    font-size: 11px;
+}}
+QLabel[role="subtleItalic"] {{
+    color: {LT_FG_DIM};
+    font-style: italic;
+}}
+QLabel[role="chip"] {{
+    background-color: {LT_BG_LIGHT};
+    color: {LT_FG_TEXT};
+    padding: 2px 8px;
+    border-radius: 3px;
+}}
+QTextEdit[role="report"] {{
+    background-color: {LT_BG_MID};
+    color: {LT_FG_TEXT};
+    font-family: "Consolas", "DejaVu Sans Mono", monospace;
+    font-size: 11px;
+}}
+QFrame[role="toolbarTop"] {{
+    border-top: 1px solid {LT_BORDER};
 }}
 
 QTabWidget::pane {{
